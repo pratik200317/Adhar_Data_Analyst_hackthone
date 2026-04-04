@@ -1,0 +1,516 @@
+import pandas as pd
+import glob  
+# It was the "Gateway" that allowed your Python script to talk to your computer's folders and find all 12 files at once.
+# Without glob, you would have had to write 12 separate lines of code with 12 different filenames. With glob, you wrote one line to find them all.
+import os
+import re
+
+# ==========================================
+# STEP 1: COMBINE THE 12 RAW FILES
+# ==========================================
+# Why: You have multiple small CSVs for Enrolment, Demographic, and Biometric. 
+# We use CONCAT to stack them vertically into three main DataFrames.
+
+enrolment_files = glob.glob("../data/enrolment/*.csv")
+enrolment_df = pd.concat([pd.read_csv(f) for f in enrolment_files], ignore_index=True)
+
+demographic_files = glob.glob("../data/demographic/*.csv")
+demographic_df = pd.concat([pd.read_csv(f) for f in demographic_files], ignore_index=True)
+
+biometric_files = glob.glob("../data/biometric/*.csv")
+biometric_df = pd.concat([pd.read_csv(f) for f in biometric_files], ignore_index=True)
+
+# ==========================================
+# STEP 2: COLUMN STANDARDIZATION
+# ==========================================
+# Why: If one file has "Pincode" and another has " pincode ", Merge will fail.
+# We make everything lowercase and remove hidden spaces.
+
+for df in [enrolment_df, demographic_df, biometric_df]:
+    df.columns = df.columns.str.lower().str.strip()
+
+# ==========================================
+# STEP 3: PREVENT DUPLICATES (GROUPBY)
+# ==========================================
+# Why: Before merging, we must ensure each (Date + Pincode) appears only ONCE per table.
+# If we don't do this, Merge will create "Data Explosion" (multiplying rows).
+
+merge_keys = ["date", "state", "district", "pincode"]
+
+# We sum the numbers for identical keys
+enrolment_df = enrolment_df.groupby(merge_keys, as_index=False).sum(numeric_only=True)
+demographic_df = demographic_df.groupby(merge_keys, as_index=False).sum(numeric_only=True)
+biometric_df = biometric_df.groupby(merge_keys, as_index=False).sum(numeric_only=True)
+
+# ==========================================
+# STEP 4: THE BIG MERGE (OUTER JOIN)
+# ==========================================
+# Why: We want to see Enrolment, Bio, and Demo side-by-side. 
+# We use OUTER so we don't lose data if a pincode only exists in one table.
+
+# First merge: Enrolment + Demographic
+final_df = pd.merge(enrolment_df, demographic_df, on=merge_keys, how="outer")
+
+# Second merge: Add Biometric
+final_df = pd.merge(final_df, biometric_df, on=merge_keys, how="outer")
+
+# ==========================================
+# STEP 5: FINAL CLEANUP & SAVE
+# ==========================================
+# Why: Remove the "10000" state error you found and save the final 2M rows.
+
+final_df = final_df[final_df['state'] != '10000']
+final_df.to_csv('final_data.csv', index=False)
+
+print("Project Successfully Cleaned and Merged!")
+print(f"Final shape: {final_df.shape}")
+
+
+#Below data cleaning process start
+df= pd.read_csv('final_data.csv',index_col=0)
+df.info()
+
+df['state'].unique()
+df['district'].unique()
+
+unique_list=df[['state','district']].drop_duplicates()
+unique_list.shape
+unique_list.to_csv('unique_val.csv',index=False)
+
+# 1. Load your messy unique values file
+unique_df = pd.read_csv('unique_val.csv')
+
+# 1. Read your dataset
+df = pd.read_csv('final_data.csv')
+
+# 2. Create new variable to protect original data
+cleaned_data = df.copy()
+
+# 3. Comprehensive State Mapping (Covers typos and City-in-State errors)
+state_fixes = {
+    'Orissa': 'Odisha', 'ODISHA': 'Odisha', 'odisha': 'Odisha',
+    'Uttaranchal': 'Uttarakhand', 'West Bangal': 'West Bengal', 
+    'Westbengal': 'West Bengal', 'West  Bengal': 'West Bengal', 
+    'West Bengli': 'West Bengal', 'WEST BENGAL': 'West Bengal',
+    'West bengal': 'West Bengal', 'WESTBENGAL': 'West Bengal', 
+    'west Bengal': 'West Bengal', 'Chhatisgarh': 'Chhattisgarh', 
+    'Tamilnadu': 'Tamil Nadu', 'andhra pradesh': 'Andhra Pradesh',
+    'Jammu & Kashmir': 'Jammu and Kashmir', 'Jammu And Kashmir': 'Jammu and Kashmir',
+    'Andaman & Nicobar Islands': 'Andaman and Nicobar Islands',
+    'The Dadra And Nagar Haveli And Daman And Diu': 'Dadra and Nagar Haveli and Daman and Diu',
+    'Daman & Diu': 'Dadra and Nagar Haveli and Daman and Diu',
+    'Daman and Diu': 'Dadra and Nagar Haveli and Daman and Diu',
+    'Dadra & Nagar Haveli': 'Dadra and Nagar Haveli and Daman and Diu',
+    'Dadra and Nagar Haveli': 'Dadra and Nagar Haveli and Daman and Diu',
+    'Pondicherry': 'Puducherry',
+    # Mapping City-Names found in State Column to their correct State
+    'Jaipur': 'Rajasthan', 'Nagpur': 'Maharashtra', 'BALANAGAR': 'Telangana',
+    'Madanapalle': 'Andhra Pradesh', 'Puttenahalli': 'Karnataka',
+    'Raja Annamalai Puram': 'Tamil Nadu', 'Darbhanga': 'Bihar'
+}
+
+# 4. Comprehensive District Mapping (Covers all variations from your text)
+dist_fixes = {
+    # Punjab / Haryana / Chandigarh
+    'SAS Nagar (Mohali)': 'S.A.S. Nagar', 'S.A.S Nagar(Mohali)': 'S.A.S. Nagar',
+    'S.A.S Nagar': 'S.A.S. Nagar', 'Gurgaon': 'Gurugram', 'Yamunanagar': 'Yamuna Nagar',
+    'Nawanshahr': 'Shaheed Bhagat Singh Nagar', 'Muktsar': 'Sri Muktsar Sahib',
+    # J&K / Ladakh
+    'Badgam': 'Budgam', 'Shupiyan': 'Shopian', 'Bandipore': 'Bandipora', 
+    'Bandipur': 'Bandipora', 'Leh (ladakh)': 'Leh', 'Rajauri': 'Rajouri',
+    'Punch': 'Poonch', 'punch': 'Poonch', 'udhampur': 'Udhampur',
+    # UP / Uttarakhand / Bihar
+    'Bulandshahar': 'Bulandshahr', 'Auraiya': 'Auraiya', 'Allahabad': 'Prayagraj',
+    'Faizabad': 'Ayodhya', 'Bara Banki': 'Barabanki', 'Hardwar': 'Haridwar',
+    'Sant Ravidas Nagar Bhadohi': 'Bhadohi', 'Sant Ravidas Nagar': 'Bhadohi',
+    'Jyotiba Phule Nagar': 'Amroha', 'Shrawasti': 'Shravasti', 'Mahrajganj': 'Maharajganj',
+    'Siddharth Nagar': 'Siddharthnagar', 'Kushi Nagar': 'Kushinagar',
+    'Sheikpura': 'Sheikhpura', 'Monghyr': 'Munger', 'Samstipur': 'Samastipur',
+    'Pashchim Champaran': 'West Champaran', 'Purbi Champaran': 'East Champaran',
+    'Aurangabad(bh)': 'Aurangabad', 'Aurangabad(BH)': 'Aurangabad',
+    # Maharashtra / Gujarat / MP
+    'Raigarh(MH)': 'Raigad', 'Raigarh(Mh)': 'Raigad', 'Raigarh': 'Raigad',
+    'Ahmed Nagar': 'Ahmednagar', 'Ahmadnagar': 'Ahmednagar', 'Ahilyanagar': 'Ahmednagar',
+    'Aurangabad': 'Chhatrapati Sambhajinagar', 'Chatrapati Sambhaji Nagar': 'Chhatrapati Sambhajinagar',
+    'Mumbai( Sub Urban )': 'Mumbai Suburban', 'Bid': 'Beed', 'Osmanabad': 'Dharashiv',
+    'Gondiya': 'Gondia', 'Buldana': 'Buldhana', 'Ahmadabad': 'Ahmedabad',
+    'East Nimar': 'Khandwa', 'West Nimar': 'Khargone', 'Hoshangabad': 'Narmadapuram',
+    'Sabar Kantha': 'Sabarkantha', 'Banas Kantha': 'Banaskantha', 'Panch Mahals': 'Panchmahal',
+    'Panchmahals': 'Panchmahal', 'Dohad': 'Dahod', 'The Dangs': 'Dang',
+    # South (AP / Telangana / Karnataka / TN)
+    'K.v. Rangareddy': 'Rangareddy', 'K.V.Rangareddy': 'Rangareddy', 'Rangareddi': 'Rangareddy',
+    'rangareddi': 'Rangareddy', 'Ranga Reddy': 'Rangareddy', 'Medchal-malkajgiri': 'Medchal Malkajgiri',
+    'Medchal?malkajgiri': 'Medchal Malkajgiri', 'Medchalâˆ’malkajgiri': 'Medchal Malkajgiri',
+    'Medchalmalkajgiri': 'Medchal Malkajgiri', 'Ananthapuramu': 'Anantapur', 
+    'Ananthapur': 'Anantapur', 'Spsr Nellore': 'Nellore', 'Sri Potti Sriramulu Nellore': 'Nellore',
+    'Visakhapatanam': 'Visakhapatnam', 'Tumkur': 'Tumakuru', 'Shimoga': 'Shivamogga',
+    'Chamrajanagar': 'Chamarajanagar', 'Chamrajnagar': 'Chamarajanagar',
+    'Chickmagalur': 'Chikkamagaluru', 'Chikmagalur': 'Chikkamagaluru',
+    'Thiruvallur': 'Tiruvallur', 'Tuticorin': 'Thoothukkudi', 'Kanyakumari': 'Kanniyakumari',
+    'Tirupathur': 'Tirupattur', 'Y. S. R': 'Y.S.R.',
+    # West Bengal / Odisha
+    'South Twenty Four Parganas': 'South 24 Parganas', '24 Paraganas South': 'South 24 Parganas',
+    'North Twenty Four Parganas': 'North 24 Parganas', '24 Paraganas North': 'North 24 Parganas',
+    'Haora': 'Howrah', 'Hawrah': 'Howrah', 'Hugli': 'Hooghly', 'Hooghiy': 'Hooghly',
+    'Medinipur': 'Paschim Medinipur', 'West Midnapore': 'Paschim Medinipur', 
+    'East Midnapore': 'Purba Medinipur', 'East Midnapur': 'Purba Medinipur',
+    'Khorda': 'Khordha', 'Anugul': 'Angul', 'Jajapur': 'Jajpur', 'Jagatsinghapur': 'Jagatsinghpur',
+    'Baleswar': 'Baleshwar', 'Nabarangapur': 'Nabarangpur', 'Debagarh': 'Deogarh',
+    # Address Mappings to Districts
+    'Near meera hospital': 'Jaipur', 'IDPL COLONY': 'Medchal Malkajgiri',
+    '5th cross': 'Bengaluru Urban', 'Near Uday nagar NIT garden': 'Nagpur',
+    'Near University Thana': 'Darbhanga', 'Kadiri Road': 'Annamayya',
+    'Near Dhyana Ashram': 'Chennai',
+    # Junk
+    '100000': 'Unknown', '?': 'Unknown',
+    # Delhi Fixes
+    'North East': 'North East Delhi',
+    'Najafgarh': 'South West Delhi',
+    
+    # Punjab/HP Fixes
+    'Mohali': 'S.A.S. Nagar',
+    'Firozpur': 'Ferozepur',
+    'Lahul and Spiti': 'Lahaul and Spiti',
+    'Lahul & Spiti': 'Lahaul and Spiti',
+    
+    # UP/Rajasthan/Gujarat Fixes
+    'Raebareli': 'Rae Bareli',
+    'Bagpat': 'Baghpat',
+    'Jalore': 'Jalor',
+    'Dhaulpur': 'Dholpur',
+    'Chittorgarh': 'Chittaurgarh',
+    'Surendra Nagar': 'Surendranagar',
+    
+    # Chhattisgarh Fixes
+    'Mohalla-Manpur-Ambagarh Chowki': 'Mohla-Manpur-Ambagarh Chouki',
+    'Gaurella Pendra Marwahi': 'Gaurela-Pendra-Marwahi',
+    'Janjgir-champa': 'Janjgir Champa',
+    'Janjgir - Champa': 'Janjgir Champa',
+    
+    # Karnataka Cleanup
+    'Bangalore': 'Bengaluru Urban', 'Bengaluru': 'Bengaluru Urban',
+    'Bangalore Rural': 'Bengaluru Rural', 'Mysore': 'Mysuru',
+    'Hasan': 'Hassan', 'Davangere': 'Davanagere', 'Belgaum': 'Belagavi',
+    'Bellary': 'Ballari', 'Gulbarga': 'Kalaburagi', 'yadgir': 'Yadgir',
+    'Bijapur(KAR)': 'Vijayapura', 'Bijapur': 'Vijayapura',
+
+    # AP & Telangana Cleanup
+    'Karim Nagar': 'Karimnagar', 'Warangal Urban': 'Hanumakonda',
+    'Warangal (urban)': 'Hanumakonda', 'Medchalâˆ’malkajgiri': 'Medchal Malkajgiri',
+    'Mahbubnagar': 'Mahabubnagar', 'Mahabub Nagar': 'Mahabubnagar',
+    'chittoor': 'Chittoor', 'Yadadri.': 'Yadadri Bhuvanagiri',
+
+    # Bengal & Odisha Cleanup
+    'South  Twenty Four Parganas': 'South 24 Parganas',
+    'South 24 pargana': 'South 24 Parganas',
+    'South 24 Pargana': 'South 24 Parganas',
+    'JAJPUR': 'Jajpur', 'jajpur': 'Jajpur',
+    'ANUGUL': 'Angul', 'Anugal': 'Angul', 'ANGUL': 'Angul',
+    'NUAPADA': 'Nuapada', 'BALANGIR': 'Balangir',
+
+    # General
+    'Pondicherry': 'Puducherry',
+    'ManendragarhChirmiriBharatpur': 'Manendragarh-Chirmiri-Bharatpur',
+    'Sibsagar': 'Sivasagar',
+    
+}
+
+# 5. Application Step
+# Strip whitespace and apply maps
+cleaned_data['state'] = cleaned_data['state'].astype(str).str.strip().replace(state_fixes)
+
+# Clean symbols (*, Â, ?, etc.) from District then apply fixes
+cleaned_data['district'] = cleaned_data['district'].astype(str).str.strip()
+cleaned_data['district'] = cleaned_data['district'].str.replace(r'[*?Âˆ−]', '', regex=True).str.strip()
+cleaned_data['district'] = cleaned_data['district'].replace(dist_fixes)
+# 2. Fix State Mix-ups using conditions
+# If District is 'Vijayapura' and State is 'Chhattisgarh', it's likely 'Bijapur'
+cleaned_data.loc[(cleaned_data['state'] == 'Chhattisgarh') & (cleaned_data['district'] == 'Vijayapura'), 'district'] = 'Bijapur'
+
+# If District is 'Raigad' and State is 'Chhattisgarh', it should be 'Raigarh'
+cleaned_data.loc[(cleaned_data['state'] == 'Chhattisgarh') & (cleaned_data['district'] == 'Raigad'), 'district'] = 'Raigarh'
+
+# If District is 'Chhatrapati Sambhajinagar' and State is 'Bihar', fix the state to 'Maharashtra'
+# (Or if it was meant to be the Bihar 'Aurangabad', rename the district)
+cleaned_data.loc[(cleaned_data['district'] == 'Chhatrapati Sambhajinagar') & (cleaned_data['state'] == 'Bihar'), 'district'] = 'Aurangabad'
+
+# If District is 'Hyderabad' and State is 'Andhra Pradesh', move to 'Telangana'
+cleaned_data.loc[(cleaned_data['district'] == 'Hyderabad') & (cleaned_data['state'] == 'Andhra Pradesh'), 'state'] = 'Telangana'
+# Verify results
+print(cleaned_data[['state', 'district']].head(20))
+
+# %%
+import pandas as pd
+
+# 1. FIX STATE MISMATCHES (Line-by-Line Correction)
+
+# List of districts in your 'Andhra' data that actually belong to Telangana
+telangana_mixups = ['Rangareddy', 'Medak', 'Nizamabad', 'Adilabad', 'Karimnagar', 'Khammam', 'Warangal', 'Nalgonda', 'Mahabubnagar']
+cleaned_data.loc[(cleaned_data['state'] == 'Andhra Pradesh') & (cleaned_data['district'].isin(telangana_mixups)), 'state'] = 'Telangana'
+
+# Fix Chandigarh/Punjab Mix-up (Rows 145-146)
+cleaned_data.loc[(cleaned_data['state'] == 'Chandigarh'), 'district'] = 'Chandigarh'
+
+# 2. FIX MESSY DATA (String Cleanup)
+
+# Handle the hidden Dash/Hyphen issue (Row 148 vs 162)
+cleaned_data['district'] = cleaned_data['district'].str.replace('–', '-', regex=False)
+
+# Standardize names
+standard_map = {
+    'Nicobars': 'Nicobar',
+    'Andamans': 'Andaman',
+    'Cuddapah': 'Y.S.R.',
+    'Purba Champaran': 'East Champaran',
+    'Paschim Champaran': 'West Champaran',
+    'Purnea': 'Purnia',
+    'Bhabua': 'Kaimur',
+    'Kaimur (Bhabua)': 'Kaimur',
+    'Janjgir Champa': 'Janjgir-Champa',
+    'Dakshin Bastar Dantewada': 'Dantewada',
+    'Dadra And Nagar Haveli': 'Dadra and Nagar Haveli',
+    'Dadra & Nagar Haveli': 'Dadra and Nagar Haveli'
+}
+# Final Unification for the 180 rows provided
+unify_map = {
+    # Chhattisgarh: Unify the same district
+    'Kawardha': 'Kabeerdham',
+    'Uttar Bastar Kanker': 'Kanker', # Row 159 (if present in master)
+    
+    # Assam: Unify New Name vs Old Name
+    'Sribhumi': 'Karimganj',
+    'North Cachar Hills': 'Dima Hasao',
+    
+    # Bihar: Unify Alias
+    'Bhabua': 'Kaimur'
+}
+
+# Create a dictionary of the logic duplicates found in your G-L batch
+unification_map = {
+    # Haryana: Old vs New
+    'Mewat': 'Nuh',
+    
+    # Jharkhand: Spelling & Language Unification
+    'Sahebganj': 'Sahibganj',
+    'Palamau': 'Palamu',
+    'Kodarma': 'Koderma',
+    'Hazaribag': 'Hazaribagh',
+    'East Singhbum': 'East Singhbhum',
+    'Purbi Singhbhum': 'East Singhbhum',
+    'Pashchimi Singhbhum': 'West Singhbhum',
+    'Seraikela-kharsawan': 'Seraikela-Kharsawan',
+    
+    # Karnataka & Kerala
+    'Ramanagar': 'Ramanagara',
+    'Kasargod': 'Kasaragod'
+}
+
+# Apply to your data
+cleaned_data['district'] = cleaned_data['district'].replace(unification_map)
+# 3. Handle the Blank Entry in J&K (Row 272)
+cleaned_data.loc[(cleaned_data['state'] == 'Jammu and Kashmir') & (cleaned_data['district'] == ''), 'district'] = 'Unknown'
+cleaned_data['district'] = cleaned_data['district'].replace(unify_map)
+cleaned_data['district'] = cleaned_data['district'].replace(standard_map)
+cleaned_data['district'] = cleaned_data['district'].str.strip() # Remove accidental spaces
+
+# %%
+import pandas as pd
+
+# 1. Fix State Mismatches (Moving districts to their correct states)
+cleaned_data.loc[cleaned_data['district'] == 'Kamrup', 'state'] = 'Assam'
+cleaned_data.loc[cleaned_data['district'].isin(['Cuddalore', 'Viluppuram']), 'state'] = 'Tamil Nadu'
+
+# 2. Complete Mapping Dictionary for M-P Batch
+# This covers aliases, spelling variations, and prefix errors
+master_fix_map = {
+    'Narsimhapur': 'Narsinghpur',
+    'Ashoknagar': 'Ashok Nagar',
+    'Dist : Thane': 'Thane',
+    'Mumbai': 'Mumbai City',
+    'Mammit': 'Mamit',
+    'NAYAGARH': 'Nayagarh',
+    'Sundergarh': 'Sundargarh',
+    'Sonapur': 'Subarnapur',
+    'Baudh': 'Boudh',
+    'Bhadrak(R)': 'Bhadrak'
+}
+
+# Apply the mapping to unify duplicate names
+cleaned_data['district'] = cleaned_data['district'].replace(master_fix_map)
+
+# 3. Final Standardization
+# This handles casing (NAYAGARH -> Nayagarh) and removes accidental spaces
+cleaned_data['district'] = cleaned_data['district'].str.strip().str.title()
+cleaned_data['state'] = cleaned_data['state'].str.strip().str.title()
+
+# %%
+sikkim_to_direction = {
+    'Mangan': 'North Sikkim',
+    'Namchi': 'South Sikkim',
+    'North': 'North Sikkim',
+    'South': 'South Sikkim',
+    'East': 'East Sikkim',
+    'West': 'West Sikkim'
+}
+
+cleaned_data.loc[cleaned_data['state'] == 'Sikkim', 'district'] = (
+    cleaned_data.loc[cleaned_data['state'] == 'Sikkim', 'district']
+      .replace(sikkim_to_direction)
+)
+
+
+# %%
+mapping_logic = {
+    # Rajasthan
+    'Jhunjhunun': 'Jhunjhunu',
+    
+    # Tamil Nadu
+    'Kancheepuram': 'Kanchipuram',
+    'Viluppuram': 'Villupuram',
+    'Tiruvarur': 'Thiruvarur',
+
+    # Telangana
+    'Medchal Malkajgiri': 'Medchal-Malkajgiri',
+    'Jangoan': 'Jangaon'
+}
+
+cleaned_data['district'] = (
+    cleaned_data['district']
+      .str.replace('âˆ’', '-', regex=False)
+      .replace(mapping_logic)
+)
+
+
+
+# %%
+cleaned_data['district'] = (
+    cleaned_data['district']
+      .str.replace('â', '-', regex=False)
+      .replace({'The Nilgiris': 'Nilgiris'})
+)
+
+
+# %%
+wb_mapping = {
+    # spelling fixes
+    'Puruliya': 'Purulia',
+    'Maldah': 'Malda',
+    'Darjiling': 'Darjeeling',
+    'Barddhaman': 'Bardhaman',
+
+    # Dinajpur standardization
+    'South Dinajpur': 'Dakshin Dinajpur',
+    'North Dinajpur': 'Uttar Dinajpur',
+    'Dinajpur Dakshin': 'Dakshin Dinajpur',
+    'Dinajpur Uttar': 'Uttar Dinajpur',
+
+    # Cooch Behar
+    'Koch Bihar': 'Cooch Behar',
+    'Coochbehar': 'Cooch Behar',
+
+    # Medinipur
+    'West Medinipur': 'Paschim Medinipur',
+    'Medinipur West': 'Paschim Medinipur',
+    'East Midnapore': 'Purba Medinipur'
+}
+
+cleaned_data['district'] = cleaned_data['district'].replace(wb_mapping)
+
+# Uttarakhand fix
+cleaned_data['district'] = cleaned_data['district'].replace({
+    'Garhwal': 'Pauri Garhwal'
+})
+
+# remove non-district entries
+non_districts = [
+    'Naihati Anandabazar',
+    'Bally Jagachha',
+    'South Dumdum(M)',
+    'Domjur'
+]
+
+cleaned_data = cleaned_data[~cleaned_data['district'].isin(non_districts)]
+
+
+
+# %%
+print(cleaned_data[['state']].nunique())
+print(cleaned_data['state'].unique())
+
+# %%
+print(cleaned_data[['district']].nunique())
+print(cleaned_data['district'].unique())
+
+# %%
+pd.set_option('display.max_rows', 1000)
+print(cleaned_data[['state','district']].drop_duplicates(ignore_index=True).sort_values(by='state',ignore_index=True))
+
+# %%
+cleaned_data = cleaned_data.drop(columns=['Unnamed: 0'], errors='ignore')
+desired_order = ['date', 'state', 'district', 'pincode']
+
+# keep remaining columns in original order
+other_cols = [col for col in cleaned_data.columns if col not in desired_order]
+
+cleaned_data = cleaned_data[desired_order + other_cols]
+
+
+# %%
+cleaned_data.head(500)
+cleaned_data.to_csv('final_clean.csv',index=False)
+
+# %%
+final_df=pd.read_csv('final_clean.csv')
+# df.head(20)
+# final_df.info()
+
+# %%
+# keys=['date','state','district','pincode']
+# final_df=final_df.groupby(keys,as_index=False ).sum()
+
+# final_df.head(25)
+
+
+keys = ['date', 'state', 'district', 'pincode']
+
+final_df = (
+    final_df
+    .groupby(keys, as_index=False)
+    .sum(numeric_only=True)
+)
+
+
+final_df.head(25)
+
+# %%
+final_df = final_df[
+    (final_df['state'] != '100000') &
+    (final_df['district'] != 'Unknown')
+]
+final_df[['age_0_5','age_5_17','age_18_greater','demo_age_5_17','demo_age_17_','bio_age_5_17','bio_age_17_']].astype(int)
+final_df.dtypes
+# final_df.head(25)
+
+# %%
+num_cols = [
+    'age_0_5','age_5_17','age_18_greater',
+    'demo_age_5_17','demo_age_17_',
+    'bio_age_5_17','bio_age_17_'
+]
+
+
+# %%
+final_df[num_cols] = (
+    final_df[num_cols]
+    .fillna(0)
+    .astype(int)
+)
+final_df[num_cols].dtypes
+final_df.info()
+
+
+# %%
+final_df.to_csv('FINAL_CLEANED_DATA.csv', index=False)
+
+
+
