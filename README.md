@@ -1,6 +1,5 @@
 Project Overview
 This project involved a massive data-wrangling effort to merge and clean 12 fragmented CSV files containing over 3 million rows of registration data. The raw data was highly inconsistent, with over 1,000 variations in district and state names, which I resolved using a custom Python pipeline.
-
 The Problem: Why this was necessary
 The raw data was unusable for visualization or reporting due to:
 Fragmentation: Data was split across Enrolment, Demographic, and Biometric files.
@@ -14,6 +13,10 @@ The Mapping Engine (The "Hard" Part): I built a 1,000+ entry dictionary to manua
 Regex Sanitization: Applied re patterns to strip non-alphanumeric noise and encoding artifacts from the string columns.
 Fuzzy Matching: Used difflib (SequenceMatcher) to catch human-entry spelling errors that weren't covered by the manual dictionary.
 Logic-Based Reassignment: Used .loc conditional logic to fix state-district mismatches (e.g., reassigning districts based on 2026 administrative boundaries).
+
+Result/ Output:
+[adhar data powerbi dashboard](Dashboard.jpeg)
+[project_report of Adhar Data](project_report.pdf)
 
 Key Results
 Consolidated Output: 12 messy files reduced to a single, high-integrity FINAL_CLEANED_DATA.csv.
