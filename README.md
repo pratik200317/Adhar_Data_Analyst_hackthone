@@ -15,8 +15,8 @@ Fuzzy Matching: Used difflib (SequenceMatcher) to catch human-entry spelling err
 Logic-Based Reassignment: Used .loc conditional logic to fix state-district mismatches (e.g., reassigning districts based on 2026 administrative boundaries).
 
 Result/ Output:
-[adhar data powerbi dashboard](Dashboard.jpeg)
-[project_report of Adhar Data](project_report.pdf)
+[Powerbi Dashboard](Dashboard.jpeg),
+[Project_Report](project_report.pdf)
 
 Key Results
 Consolidated Output: 12 messy files reduced to a single, high-integrity FINAL_CLEANED_DATA.csv.
